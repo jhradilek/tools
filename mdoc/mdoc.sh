@@ -191,12 +191,11 @@ function list_parents {
 
   [[ -z "$toplevel" ]] && exit_with_error "$filename: Not in a Git repository" 1
 
-  local -r titles=$(find -P "$toplevel" -type f -name 'master.adoc')
-  local -r assemblies=$(find -P "$toplevel" -type f -name 'assembly_*.adoc')
+  local -r files=$(find -P "$toplevel" -type f -name '*.adoc' -exec realpath {} \; | sort -u)
 
   export -f print_includes
   export NAME
-  local -r parents=$(echo -e "$titles\n$assemblies" | xargs -n 1 -P 0 -I % bash -c 'print_includes "%" | grep -q '"$filename"' && echo "%"' --)
+  local -r parents=$(echo -e "$files" | grep -ve '/\(con\|proc\|ref\)_[^/]\+\.adoc' | xargs -n 1 -P 0 -I % bash -c 'print_includes "%" | grep -q '"$filename"' && echo "%"' --)
 
   print_results "$filename" "$parents"
 }
@@ -212,15 +211,13 @@ function list_orphans {
     toplevel="$PWD"
   fi
 
-  local -r parents=$(find -P "$toplevel" -type f -regextype sed -regex '.*/\(master\|assembly_[^/]\+\)\.adoc')
+  local -r files=$(find -P "$toplevel" -type f -name '*.adoc' -exec realpath {} \; | sort -u)
 
   export -f print_includes
   export NAME
-  local -r children=$(echo -e "$parents" | xargs -n 1 -P 0 -I % bash -c 'print_includes "%"' | sort -u)
+  local -r children=$(echo -e "$files" | grep -ve '/\(con\|proc\|ref\)_[^/]\+\.adoc' | xargs -n 1 -P 0 -I % bash -c 'print_includes "%"' | sort -u)
 
-  local -r files=$(find -P "$toplevel" -type f -name '*.adoc' -exec realpath {} \; | grep -v 'master.adoc' | sort -u)
-
-  local -r orphans=$(comm -13 <(echo "$children") <(echo "$files"))
+  local -r orphans=$(comm -13 <(echo "$children") <(echo "$files"| grep -v '/master.adoc'))
 
   print_results "$toplevel" "$orphans"
 }
