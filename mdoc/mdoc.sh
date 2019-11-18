@@ -34,8 +34,10 @@ declare -r VERSION='0.0.1'
 # Usage: print_usage
 function print_usage {
   # Print usage:
-  echo -e "Usage: $NAME [-hV]"
-  echo -e "       $NAME children FILE\n"
+  echo "Usage: $NAME [-hV]"
+  echo "       $NAME children FILE"
+  echo "       $NAME parents FILE"
+  echo -e "       $NAME orphans\n"
   echo '  -h           display this help and exit'
   echo '  -V           display version and exit'
 }
@@ -258,6 +260,14 @@ shift $(($OPTIND - 1))
 # Verify the number of command-line arguments:
 [[ "$#" -gt 0 ]] || exit_with_error 'Invalid number of arguments' 22
 
+# Verify that all required utilities are present in the system:
+for dependency in asciidoctor git ruby; do
+  if ! type "$dependency" &>/dev/null; then
+    exit_with_error "Missing dependency -- '$dependency'" 1
+  fi
+done
+
+
 # Process the commands:
 case "$1" in
   children)
@@ -318,6 +328,10 @@ mdoc - display important information about modular documentation files
 B<mdoc> [B<-hV>]
 
 B<mdoc> B<children> I<file>
+
+B<mdoc> B<parents> I<file>
+
+B<mdoc> B<orphans> I<file>
 
 =head1 DESCRIPTION
 
