@@ -28,6 +28,26 @@ declare -r VERSION='0.0.1'
 #                            GENERIC FUNCTIONS
 # -------------------------------------------------------------------------
 
+
+# Prints usage information to standard output:
+#
+# Usage: print_usage
+function print_usage {
+  # Print usage:
+  echo -e "Usage: $NAME [-hV]"
+  echo -e "       $NAME children FILE\n"
+  echo '  -h           display this help and exit'
+  echo '  -V           display version and exit'
+}
+
+# Print version information to standard output:
+#
+# Usage: print_version
+function print_version {
+  # Print version:
+  echo "$NAME $VERSION"
+}
+
 # Prints an error message to standard error output and terminates the
 # script with a selected exit status.
 #
@@ -43,14 +63,151 @@ function exit_with_error {
   exit $exit_status
 }
 
-# Prints a warning message to standard error output.
-#
-# Usage: warn WARNING_MESSAGE
-function warn {
-  local -r warning_message="$1"
 
-  # Print the supplied message to standard error output:
-  echo -e "$NAME: $warning_message" >&2
+# -------------------------------------------------------------------------
+#                            SCRIPT FUNCTIONS
+# -------------------------------------------------------------------------
+
+# Determines whether the supplied path is located in a Git repository and
+# prints the absolute path to the top-level directory of that repository.
+# If the path is not part of a Git repository, the function does not print
+# anything.
+#
+# Usage: print_git_root PATH
+function print_git_root {
+  local -r path="$1"
+
+  # Determine the full path:
+  local -r fullpath=$(realpath "$path")
+
+  # Determine the directory the supplied file is in:
+  local dirname
+  if [[ -d "$fullpath" ]]; then
+    dirname="$fullpath"
+  else
+    dirname=$(dirname "$fullpath")
+  fi
+
+  # Print the absolute path to the top-level directory of the Git
+  # repository if there is any:
+  bash -c "cd '$dirname' && git rev-parse --show-toplevel" 2>/dev/null
+}
+
+# FIXME
+#
+# Usage: print_results LIST HEADER FOOTER
+function print_results {
+  local -r path="$1"
+  local -r results="$2"
+  local -r header="${3:-Displaying results for: $1}"
+
+  # Count the number of processed lines:
+  local count=$(echo "$results" | wc -l)
+
+  # Print header:
+  echo -e "$header\n"
+
+  # Get the absolute path to the top-level directory of the Git repository:
+  local -r toplevel=$(print_git_root "$path")
+
+  if [[ -z "$results" ]]; then
+    echo "  No results found."
+    count=0
+  elif [[ ! -z "$toplevel" ]]; then
+    echo "$results" | while read file; do
+      echo "  ${file#$toplevel/}"
+    done
+  else
+    echo "$results" | sed -e 's/^/  /'
+  fi
+
+  # Print footer:
+  echo -e "\nFound $count results."
+}
+
+# Reads an AsciiDoc file and prints a list of all included files to
+# standard output.
+#
+# Usage: print_includes FILE
+function print_includes {
+  local -r filename="$1"
+
+  # Parse the AsciiDoc file, get a complete list of included files, and
+  # print their full paths to standard output:
+  ruby <<-EOF 2>/dev/null
+#!/usr/bin/env ruby
+
+require 'asciidoctor'
+
+document = Asciidoctor.load_file("$filename", doctype: :book, safe: :safe)
+document.reader.includes.each { |filename|
+  dirname  = File.dirname("$filename")
+  fullpath = File.join(dirname, "#{filename}.adoc")
+  puts File.realpath(fullpath)
+}
+EOF
+}
+
+# FIXME
+#
+# Usage: list_children FILE
+function list_children {
+  local -r filename="$1"
+
+  # Verify that the supplied file exists and is readable:
+  [[ -e "$filename" ]] || exit_with_error "$filename: No such file or directory" 2
+  [[ -r "$filename" ]] || exit_with_error "$filename: Permission denied" 13
+  [[ -f "$filename" ]] || exit_with_error "$filename: Not a file" 21
+
+  local -r children=$(print_includes "$filename")
+
+  print_results "$filename" "$children"
+}
+
+# FIXME
+#
+# Usage: list_parents FILE
+function list_parents {
+  local -r filename="$1"
+
+  # Verify that the supplied file exists and is readable:
+  [[ -e "$filename" ]] || exit_with_error "$filename: No such file or directory" 2
+  [[ -r "$filename" ]] || exit_with_error "$filename: Permission denied" 13
+  [[ -f "$filename" ]] || exit_with_error "$filename: Not a file" 21
+
+  local -r toplevel=$(print_git_root "$filename")
+
+  [[ -z "$toplevel" ]] && exit_with_error "$filename: Not in a git repository" 1
+
+  local -r titles=$(find -P "$toplevel" -type f -name 'master.adoc')
+  local -r assemblies=$(find -P "$toplevel" -type f -name 'assembly_*.adoc')
+
+  export -f print_includes
+  export NAME
+  local -r parents=$(echo -e "$titles\n$assemblies" | xargs -n 1 -P 0 -I % bash -c 'print_includes "%" | grep -q '"$filename"' && echo "%"' --)
+
+  print_results "$filename" "$parents"
+}
+
+# FIXME
+#
+# Usage: list_orphans
+function list_orphans {
+  local -r toplevel=$(git rev-parse --show-toplevel)
+
+  [[ -z "$toplevel" ]] && exit_with_error "$filename: Not in a git repository" 1
+
+  local -r parents=$(find -P "$toplevel" -type f -regextype sed -regex '.*/\(master\|assembly_[^/]\+\)\.adoc')
+
+  export -f print_includes
+  export NAME
+  local -r children=$(echo -e "$parents" | xargs -n 1 -P 0 -I % bash -c 'print_includes "%"' | sort -u)
+
+  local -r files=$(find -P "$toplevel" -type f -name '*.adoc' -exec realpath {} \; | grep -v 'master.adoc' | sort -u)
+
+  local -r orphans=$(comm -13 <(echo "$children") <(echo "$files"))
+
+  print_results "$toplevel" "$orphans"
 }
 
 
@@ -63,16 +220,14 @@ while getopts ':hV' OPTION; do
   case "$OPTION" in
     h)
       # Print usage information to standard output:
-      echo -e "Usage: $NAME [-hV]\n"
-      echo '  -h           display this help and exit'
-      echo '  -V           display version and exit'
+      print_usage
 
       # Terminate the script:
       exit 0
       ;;
     V)
       # Print version information to standard output:
-      echo "$NAME $VERSION"
+      print_version
 
       # Terminate the script:
       exit 0
@@ -88,10 +243,48 @@ done
 shift $(($OPTIND - 1))
 
 # Verify the number of command-line arguments:
-[[ "$#" -eq 0 ]] || exit_with_error 'Invalid number of arguments' 22
+[[ "$#" -gt 0 ]] || exit_with_error 'Invalid number of arguments' 22
 
-# Report success:
-echo 'Done.'
+# Process the commands:
+case "$1" in
+  children)
+    # Verify the number of command-line arguments:
+    [[ "$#" -eq 2 ]] || exit_with_error 'Invalid number of arguments' 22
+
+    # List all files included in the AsciiDoc file:
+    list_children "$2"
+    ;;
+  parents)
+    # Verify the number of command-line arguments:
+    [[ "$#" -eq 2 ]] || exit_with_error 'Invalid number of arguments' 22
+
+    # List all files included in the AsciiDoc file:
+    list_parents "$2"
+    ;;
+  orphans)
+    # Verify the number of command-line arguments:
+    [[ "$#" -eq 1 ]] || exit_with_error 'Invalid number of arguments' 22
+
+    list_orphans
+    ;;
+  debug)
+    [[ "$#" -eq 2 ]] || exit_with_error 'Invalid number of arguments' 22
+
+    print_git_root "$2"
+    ;;
+  help)
+    # Print usage information to standard output:
+    print_usage
+    ;;
+  version)
+    # Print version information to standard output:
+    print_version
+    ;;
+  *)
+    # Report an invalid command and terminate the script:
+    exit_with_error "Invalid command -- '$1'" 22
+    ;;
+esac
 
 # Terminate the script:
 exit 0
@@ -110,6 +303,8 @@ mdoc - display important information about modular documentation files
 =head1 SYNOPSIS
 
 B<mdoc> [B<-hV>]
+
+B<mdoc> B<children> I<file>
 
 =head1 DESCRIPTION
 
