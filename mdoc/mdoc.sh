@@ -287,11 +287,6 @@ case "$1" in
 
     list_orphans
     ;;
-  debug)
-    [[ "$#" -eq 2 ]] || exit_with_error 'Invalid number of arguments' 22
-
-    print_git_root "$2"
-    ;;
   help)
     # Print usage information to standard output:
     print_usage
