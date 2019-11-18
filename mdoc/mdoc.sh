@@ -63,6 +63,16 @@ function exit_with_error {
   exit $exit_status
 }
 
+# Prints a warning message to standard error output.
+#
+# Usage: warn WARNING_MESSAGE
+function warn {
+  local -r warning_message="$1"
+
+  # Print the supplied message to standard error output:
+  echo -e "$NAME: $warning_message" >&2
+}
+
 
 # -------------------------------------------------------------------------
 #                            SCRIPT FUNCTIONS
@@ -113,12 +123,12 @@ function print_results {
   if [[ -z "$results" ]]; then
     echo "  No results found."
     count=0
-  elif [[ ! -z "$toplevel" ]]; then
-    echo "$results" | while read file; do
-      echo "  ${file#$toplevel/}"
-    done
   else
-    echo "$results" | sed -e 's/^/  /'
+    echo "$results" | while read file; do
+      [[ ! -z "$toplevel" ]] \
+        && echo "  ${file#$toplevel/}" \
+        || echo "  ${file#$PWD/}"
+    done
   fi
 
   # Print footer:
@@ -177,7 +187,7 @@ function list_parents {
 
   local -r toplevel=$(print_git_root "$filename")
 
-  [[ -z "$toplevel" ]] && exit_with_error "$filename: Not in a git repository" 1
+  [[ -z "$toplevel" ]] && exit_with_error "$filename: Not in a Git repository" 1
 
   local -r titles=$(find -P "$toplevel" -type f -name 'master.adoc')
   local -r assemblies=$(find -P "$toplevel" -type f -name 'assembly_*.adoc')
@@ -193,9 +203,12 @@ function list_parents {
 #
 # Usage: list_orphans
 function list_orphans {
-  local -r toplevel=$(git rev-parse --show-toplevel)
+  local toplevel=$(print_git_root "$PWD")
 
-  [[ -z "$toplevel" ]] && exit_with_error "$filename: Not in a git repository" 1
+  if [[ -z "$toplevel" ]]; then
+    warn "Not in a Git repository, searching in PWD instead"
+    toplevel="$PWD"
+  fi
 
   local -r parents=$(find -P "$toplevel" -type f -regextype sed -regex '.*/\(master\|assembly_[^/]\+\)\.adoc')
 
