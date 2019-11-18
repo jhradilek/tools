@@ -195,7 +195,7 @@ function list_parents {
 
   export -f print_includes
   export NAME
-  local -r parents=$(echo -e "$files" | grep -ve '/\(con\|proc\|ref\)_[^/]\+\.adoc' | xargs -n 1 -P 0 -I % bash -c 'print_includes "%" | grep -q '"$filename"' && echo "%"' --)
+  local -r parents=$(echo -e "$files" | grep -ve '/\(con\|proc\|ref\)_[^/]\+\.adoc' | xargs -n 1 -P 10 -I % bash -c 'grep -q include:: "%" && print_includes "%" | grep -q '"$filename"' && echo "%"' --)
 
   print_results "$filename" "$parents"
 }
@@ -215,7 +215,7 @@ function list_orphans {
 
   export -f print_includes
   export NAME
-  local -r children=$(echo -e "$files" | grep -ve '/\(con\|proc\|ref\)_[^/]\+\.adoc' | xargs -n 1 -P 0 -I % bash -c 'print_includes "%"' | sort -u)
+  local -r children=$(echo -e "$files" | grep -ve '/\(con\|proc\|ref\)_[^/]\+\.adoc' | xargs -n 1 -P 10 -I % bash -c 'grep -q include:: "%" && print_includes "%"' | sort -u)
 
   local -r orphans=$(comm -13 <(echo "$children") <(echo "$files"| grep -v '/master.adoc'))
 
